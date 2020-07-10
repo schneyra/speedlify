@@ -2,22 +2,63 @@ const prettyBytes = require("pretty-bytes");
 const shortHash = require("short-hash");
 const lodash = require("lodash");
 
-function showDigits(num, digits = 2) {
-	return parseFloat(num).toFixed(digits);
+function showDigits(num, digits = 2, alwaysShowDigits = true) {
+	let toNum = parseFloat(num);
+	if(!alwaysShowDigits && toNum === Math.floor(toNum)) {
+		// if a whole number like 0, just show 0 and not 0.00
+		return toNum;
+	}
+	return toNum.toFixed(digits);
+}
+
+function pad(num) {
+	return (num < 10 ? "0" : "") + num;
+}
+
+function mapProp(prop, targetObj) {
+	if(Array.isArray(prop)) {
+		prop =  prop.map(entry => {
+			if(entry === ":lastkey") {
+				let ret;
+				for(let key in targetObj) {
+					ret = key;
+				}
+				return ret;
+			}
+
+			return entry;
+		});
+	}
+
+	return prop;
+}
+
+function getLighthouseTotal(entry) {
+	return entry.lighthouse.performance * 100 +
+		entry.lighthouse.accessibility * 100 +
+		entry.lighthouse.bestPractices * 100 +
+		entry.lighthouse.seo * 100;
 }
 
 module.exports = function(eleventyConfig) {
-	eleventyConfig.addFilter("shortHash", function(value) {
-		return shortHash(value);
-	});
+	eleventyConfig.addFilter("shortHash", shortHash);
 
 	eleventyConfig.addFilter("repeat", function(str, times) {
-		return (new Array(times)).join(str) + str;
+		let result = '';
+
+		for (let i = 0; i < times; i++) {
+			result += str;
+		}
+
+		return result;
 	});
 
-	eleventyConfig.addFilter("head", function(arr, num) {
-		if(num) {
-			return arr.slice(0, num);
+	// first ${num} entries (and the last entry too)
+	eleventyConfig.addFilter("headAndLast", function(arr, num) {
+		if(num && num < arr.length) {
+			let newArr = arr.slice(0, num);
+			newArr.push(arr[arr.length - 1]);
+			return newArr;
 		}
 		return arr;
 	});
@@ -28,9 +69,13 @@ module.exports = function(eleventyConfig) {
 		return url;
 	});
 
+	eleventyConfig.addFilter("showDigits", function(num, digits) {
+		return showDigits(num, digits, false);
+	});
+
 	eleventyConfig.addFilter("displayTime", function(time) {
 		let num = parseFloat(time);
-		if(num > 1000) {
+		if(num > 850) {
 			return `${showDigits(num / 1000, 2)}s`;
 		}
 		return `${showDigits(num, 0)}ms`;
@@ -40,33 +85,12 @@ module.exports = function(eleventyConfig) {
 		return prettyBytes(size);
 	});
 
-	function pad(num) {
-		return (num < 10 ? "0" : "") + num;
-	}
 	eleventyConfig.addFilter("displayDate", function(timestamp) {
 		let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 		let date = new Date(timestamp);
 		let day = `${months[date.getMonth()]} ${pad(date.getDate())}`;
-		return `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+		return `${day} <span class="leaderboard-hide-md">${pad(date.getHours())}:${pad(date.getMinutes())}</span>`;
 	});
-
-	function mapProp(prop, targetObj) {
-		if(Array.isArray(prop)) {
-			prop =  prop.map(entry => {
-				if(entry === ":lastkey") {
-					let ret;
-					for(let key in targetObj) {
-						ret = key;
-					}
-					return ret;
-				}
-
-				return entry;
-			});
-		}
-
-		return prop;
-	}
 
 	// Works with arrays too
 	// Sort an object that has `order` props in values.
@@ -162,15 +186,21 @@ module.exports = function(eleventyConfig) {
 		return count;
 	});
 
-	eleventyConfig.addFilter("lighthouseTotal", (entry) => {
-		let total = 0;
-		total += entry.lighthouse.performance;
-		total += entry.lighthouse.accessibility;
-		total += entry.lighthouse.bestPractices;
-		total += entry.lighthouse.seo;
-		return Math.round(total * 100);
+	eleventyConfig.addFilter("lighthouseTotal", getLighthouseTotal);
+
+	eleventyConfig.addFilter("addLighthouseTotals", (arr) => {
+		/* special case */
+		for(let obj of arr) {
+			for(let entry in obj) {
+				if(obj[entry].lighthouse) {
+					obj[entry].lighthouse[":lhtotal"] = getLighthouseTotal(obj[entry]);
+				}
+			}
+		}
+		return arr;
 	});
 
+	// Assets
 	eleventyConfig.addPassthroughCopy({
 		"./node_modules/chartist/dist/chartist.css": "chartist.css",
 		"./node_modules/chartist/dist/chartist.js": "chartist.js",
